@@ -18,6 +18,8 @@ const consoleFormat = format.combine(
   })
 );
 
+const productionConsoleFormat = format.combine(format.timestamp(), format.errors({ stack: true }), format.json());
+
 export const logger = createLogger({
   level: process.env.NODE_ENV === "production" ? "info" : "debug",
   format: format.combine(format.timestamp(), format.errors({ stack: true }), format.json()),
@@ -33,10 +35,8 @@ export const logger = createLogger({
   ]
 });
 
-if (process.env.NODE_ENV !== "production") {
-  logger.add(
-    new transports.Console({
-      format: consoleFormat
-    })
-  );
-}
+logger.add(
+  new transports.Console({
+    format: process.env.NODE_ENV === "production" ? productionConsoleFormat : consoleFormat
+  })
+);
