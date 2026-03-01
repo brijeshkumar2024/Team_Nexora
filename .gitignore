@@ -1,0 +1,16 @@
+node_modules
+dist
+build
+.env
+**/.env
+client/.env
+server/.env
+.env.local
+*.log
+logs/
+server/logs/
+.DS_Store
+Thumbs.db
+!.env.example
+!client/.env.example
+!server/.env.example
