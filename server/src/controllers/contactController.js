@@ -5,6 +5,12 @@ import { AppError } from "../utils/appError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { logger } from "../config/logger.js";
 
+const getMailErrorMeta = (reason) => ({
+  error: reason?.message || reason,
+  code: reason?.code,
+  response: reason?.response
+});
+
 export const submitContact = asyncHandler(async (req, res) => {
   const payload = {
     name: req.body.name,
@@ -28,14 +34,14 @@ export const submitContact = asyncHandler(async (req, res) => {
   if (teamNotification.status === "rejected") {
     logger.error("Failed to send team contact notification email", {
       contactId: contact._id.toString(),
-      error: teamNotification.reason?.message || teamNotification.reason
+      ...getMailErrorMeta(teamNotification.reason)
     });
   }
 
   if (senderAcknowledgement.status === "rejected") {
     logger.error("Failed to send contact acknowledgement email", {
       contactId: contact._id.toString(),
-      error: senderAcknowledgement.reason?.message || senderAcknowledgement.reason
+      ...getMailErrorMeta(senderAcknowledgement.reason)
     });
   }
 

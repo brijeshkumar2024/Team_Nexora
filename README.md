@@ -154,6 +154,9 @@ npm start
 - `SMTP_PASS`
 - `MAIL_FROM_NAME`
 - `MAIL_FROM_EMAIL`
+Important:
+- Do not wrap env values in quotes (for example use `smtp.gmail.com`, not `"smtp.gmail.com"`).
+- If using Gmail App Password, paste it without spaces.
 
 7. Deploy and test `GET /api/v1/health`.
 

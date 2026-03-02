@@ -2,6 +2,20 @@ import nodemailer from "nodemailer";
 import { env } from "../config/env.js";
 
 let cachedTransporter = null;
+const requiredSmtpKeys = ["SMTP_HOST", "SMTP_USER", "SMTP_PASS"];
+const smtpMissingByKey = {
+  SMTP_HOST: () => !env.smtpHost,
+  SMTP_USER: () => !env.smtpUser,
+  SMTP_PASS: () => !env.smtpPass
+};
+
+export const getSmtpStatus = () => {
+  const missing = requiredSmtpKeys.filter((key) => smtpMissingByKey[key]());
+  return {
+    configured: missing.length === 0,
+    missing
+  };
+};
 
 const mailFromAddress = () => {
   const fromEmail = env.mailFromEmail || env.smtpUser;
@@ -13,12 +27,16 @@ const mailFromAddress = () => {
 
 const buildTransporter = () => {
   if (cachedTransporter) return cachedTransporter;
-  if (!env.smtpHost || !env.smtpUser || !env.smtpPass) return null;
+  const smtpStatus = getSmtpStatus();
+  if (!smtpStatus.configured) return null;
 
   cachedTransporter = nodemailer.createTransport({
     host: env.smtpHost,
     port: env.smtpPort,
     secure: env.smtpSecure,
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 20000,
     auth: {
       user: env.smtpUser,
       pass: env.smtpPass
@@ -31,9 +49,35 @@ const buildTransporter = () => {
 const getTransporter = () => {
   const transporter = buildTransporter();
   if (!transporter) {
-    throw new Error("SMTP is not configured. Set SMTP_HOST, SMTP_PORT, SMTP_USER and SMTP_PASS.");
+    const smtpStatus = getSmtpStatus();
+    throw new Error(`SMTP is not configured. Missing: ${smtpStatus.missing.join(", ")}.`);
   }
   return transporter;
+};
+
+export const verifySmtpConnection = async () => {
+  const smtpStatus = getSmtpStatus();
+  if (!smtpStatus.configured) {
+    return {
+      ok: false,
+      reason: "missing_env",
+      missing: smtpStatus.missing
+    };
+  }
+
+  try {
+    const transporter = getTransporter();
+    await transporter.verify();
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "verify_failed",
+      code: error?.code,
+      response: error?.response,
+      message: error?.message
+    };
+  }
 };
 
 export const sendContactNotificationToTeam = async (contact) => {
@@ -59,7 +103,7 @@ ${contact.message}`,
 <p><strong>Inquiry Type:</strong> ${contact.inquiryType}</p>
 <p><strong>Timestamp:</strong> ${timestamp}</p>
 <p><strong>Message:</strong></p>
-<p>${contact.message.replace(/\n/g, "<br/>")}</p>`
+<p>${(contact.message || "").replace(/\n/g, "<br/>")}</p>`
   });
 };
 
