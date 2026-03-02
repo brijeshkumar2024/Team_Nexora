@@ -18,6 +18,11 @@ import { env } from "./config/env.js";
 
 const app = express();
 
+// Required behind Render/other reverse proxies so rate-limit can identify clients correctly.
+if (env.nodeEnv === "production") {
+  app.set("trust proxy", 1);
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 250,

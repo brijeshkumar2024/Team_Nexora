@@ -161,7 +161,7 @@ npm start
 Important:
 - Do not wrap env values in quotes (for example use `smtp.gmail.com`, not `"smtp.gmail.com"`).
 - If using Gmail App Password, paste it without spaces.
-- If `RESEND_API_KEY` is set, backend uses Resend API first and falls back to SMTP only when Resend is not configured.
+- Backend prefers Resend when fully configured, and automatically falls back to SMTP when Resend is missing or send/verification fails.
 
 7. Deploy and test `GET /api/v1/health`.
 

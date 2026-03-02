@@ -33,21 +33,45 @@ export const getResendStatus = () => {
 };
 
 export const getEmailStatus = () => {
-  if (env.resendApiKey) {
-    const resendStatus = getResendStatus();
+  const resendStatus = getResendStatus();
+  const smtpStatus = getSmtpStatus();
+
+  if (resendStatus.configured) {
     return {
       provider: "resend",
-      configured: resendStatus.configured,
+      configured: true,
+      missing: []
+    };
+  }
+
+  if (smtpStatus.configured) {
+    return {
+      provider: "smtp",
+      configured: true,
+      missing: []
+    };
+  }
+
+  if (env.resendApiKey || env.mailFromEmail) {
+    return {
+      provider: "resend",
+      configured: false,
       missing: resendStatus.missing
     };
   }
 
-  const smtpStatus = getSmtpStatus();
   return {
     provider: "smtp",
-    configured: smtpStatus.configured,
+    configured: false,
     missing: smtpStatus.missing
   };
+};
+
+const getConfiguredProviderPriority = () => {
+  const providers = [];
+  if (getResendStatus().configured) providers.push("resend");
+  if (getSmtpStatus().configured) providers.push("smtp");
+  return providers;
 };
 
 const mailFromAddress = () => {
@@ -176,17 +200,39 @@ const sendWithSmtp = async ({ to, subject, text, html }) => {
   });
 };
 
+const sendByProvider = (provider, payload) => {
+  if (provider === "resend") return sendWithResend(payload);
+  return sendWithSmtp(payload);
+};
+
 const sendEmail = async (payload) => {
-  const emailStatus = getEmailStatus();
-  if (!emailStatus.configured) {
+  const configuredProviders = getConfiguredProviderPriority();
+  if (!configuredProviders.length) {
+    const emailStatus = getEmailStatus();
     throw new Error(`Email provider is not configured. Provider: ${emailStatus.provider}. Missing: ${emailStatus.missing.join(", ")}.`);
   }
 
-  if (emailStatus.provider === "resend") {
-    return sendWithResend(payload);
+  const errors = [];
+  for (const provider of configuredProviders) {
+    try {
+      return await sendByProvider(provider, payload);
+    } catch (error) {
+      errors.push({
+        provider,
+        message: error?.message,
+        code: error?.code,
+        response: error?.response
+      });
+    }
   }
 
-  return sendWithSmtp(payload);
+  const details = errors
+    .map((entry) => `${entry.provider}: ${entry.message || "unknown error"}`)
+    .join(" | ");
+  const error = new Error(`Email send failed for all configured providers. ${details}`);
+  error.code = errors[0]?.code;
+  error.response = errors[0]?.response;
+  throw error;
 };
 
 const verifyResendConnection = async () => {
@@ -209,6 +255,20 @@ const verifyResendConnection = async () => {
 
     if (!response.ok) {
       const details = await readResponseBody(response);
+      const isRestrictedSendOnlyKey =
+        response.status === 401 &&
+        ((typeof details === "object" && details?.name === "restricted_api_key") ||
+          (typeof details === "string" && details.includes("restricted_api_key")));
+
+      // Restricted "send-only" keys cannot access /domains, but can still send mail via /emails.
+      if (isRestrictedSendOnlyKey) {
+        return {
+          ok: true,
+          provider: "resend",
+          limited: true
+        };
+      }
+
       const error = buildResendError(response.status, details);
       throw error;
     }
@@ -254,11 +314,33 @@ const verifySmtpConnection = async () => {
 };
 
 export const verifyEmailConnection = async () => {
-  const emailStatus = getEmailStatus();
-  if (emailStatus.provider === "resend") {
-    return verifyResendConnection();
+  const configuredProviders = getConfiguredProviderPriority();
+  if (!configuredProviders.length) {
+    const emailStatus = getEmailStatus();
+    return {
+      ok: false,
+      provider: emailStatus.provider,
+      reason: "missing_env",
+      missing: emailStatus.missing
+    };
   }
-  return verifySmtpConnection();
+
+  const failures = [];
+  for (const provider of configuredProviders) {
+    const result = provider === "resend" ? await verifyResendConnection() : await verifySmtpConnection();
+    if (result.ok) return result;
+    failures.push(result);
+  }
+
+  return {
+    ...failures[0],
+    reason: "verify_failed_all",
+    attempts: failures.map((item) => ({
+      provider: item.provider,
+      code: item.code,
+      message: item.message
+    }))
+  };
 };
 
 export const sendContactNotificationToTeam = async (contact) => {
