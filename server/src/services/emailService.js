@@ -1,4 +1,6 @@
 import nodemailer from "nodemailer";
+import dns from "node:dns/promises";
+import net from "node:net";
 import { env } from "../config/env.js";
 
 let cachedTransporter = null;
@@ -25,12 +27,12 @@ const mailFromAddress = () => {
   return fromEmail;
 };
 
-const buildTransporter = () => {
+const buildTransporter = async () => {
   if (cachedTransporter) return cachedTransporter;
   const smtpStatus = getSmtpStatus();
   if (!smtpStatus.configured) return null;
 
-  cachedTransporter = nodemailer.createTransport({
+  let transportConfig = {
     host: env.smtpHost,
     port: env.smtpPort,
     secure: env.smtpSecure,
@@ -41,13 +43,45 @@ const buildTransporter = () => {
       user: env.smtpUser,
       pass: env.smtpPass
     }
-  });
+  };
+
+  const smtpOverride = await resolveSmtpConfig();
+  if (smtpOverride) {
+    transportConfig = {
+      ...transportConfig,
+      host: smtpOverride.host,
+      tls: smtpOverride.tls
+    };
+  }
+
+  cachedTransporter = nodemailer.createTransport(transportConfig);
 
   return cachedTransporter;
 };
 
-const getTransporter = () => {
-  const transporter = buildTransporter();
+const resolveSmtpConfig = async () => {
+  if (!env.smtpHost || net.isIP(env.smtpHost)) {
+    return null;
+  }
+
+  try {
+    const ipv4Addresses = await dns.resolve4(env.smtpHost);
+    const ipv4Host = ipv4Addresses?.[0];
+    if (!ipv4Host) return null;
+
+    return {
+      host: ipv4Host,
+      tls: {
+        servername: env.smtpHost
+      }
+    };
+  } catch (_error) {
+    return null;
+  }
+};
+
+const getTransporter = async () => {
+  const transporter = await buildTransporter();
   if (!transporter) {
     const smtpStatus = getSmtpStatus();
     throw new Error(`SMTP is not configured. Missing: ${smtpStatus.missing.join(", ")}.`);
@@ -66,7 +100,7 @@ export const verifySmtpConnection = async () => {
   }
 
   try {
-    const transporter = getTransporter();
+    const transporter = await getTransporter();
     await transporter.verify();
     return { ok: true };
   } catch (error) {
@@ -81,7 +115,7 @@ export const verifySmtpConnection = async () => {
 };
 
 export const sendContactNotificationToTeam = async (contact) => {
-  const transporter = getTransporter();
+  const transporter = await getTransporter();
   const timestamp = new Date(contact.createdAt || Date.now()).toISOString();
 
   return transporter.sendMail({
@@ -108,7 +142,7 @@ ${contact.message}`,
 };
 
 export const sendContactAcknowledgement = async (contact) => {
-  const transporter = getTransporter();
+  const transporter = await getTransporter();
 
   return transporter.sendMail({
     from: mailFromAddress(),
