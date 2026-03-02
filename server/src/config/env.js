@@ -47,6 +47,8 @@ export const env = {
   smtpSecure: readBoolean("SMTP_SECURE", false),
   smtpUser: readEnv("SMTP_USER"),
   smtpPass: readEnv("SMTP_PASS"),
+  resendApiKey: readEnv("RESEND_API_KEY"),
+  resendApiBaseUrl: readEnv("RESEND_API_BASE_URL", "https://api.resend.com"),
   mailFromName: readEnv("MAIL_FROM_NAME", "Team Nexora"),
   mailFromEmail: readEnv("MAIL_FROM_EMAIL"),
   contactReceiverEmail: readEnv("CONTACT_RECEIVER_EMAIL", "ceo.nexora2025@gmail.com")

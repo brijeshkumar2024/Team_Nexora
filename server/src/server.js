@@ -2,26 +2,30 @@ import app from "./app.js";
 import { connectDB } from "./config/db.js";
 import { env } from "./config/env.js";
 import { logger } from "./config/logger.js";
-import { getSmtpStatus, verifySmtpConnection } from "./services/emailService.js";
+import { getEmailStatus, verifyEmailConnection } from "./services/emailService.js";
 
 const start = async () => {
   try {
     await connectDB(env.mongoUri);
-    const smtpStatus = getSmtpStatus();
-    if (!smtpStatus.configured) {
-      logger.warn("SMTP is not fully configured. Contact emails will fail.", {
-        missing: smtpStatus.missing
+    const emailStatus = getEmailStatus();
+    if (!emailStatus.configured) {
+      logger.warn("Email provider is not fully configured. Contact emails will fail.", {
+        provider: emailStatus.provider,
+        missing: emailStatus.missing
       });
     } else {
-      const smtpVerification = await verifySmtpConnection();
-      if (smtpVerification.ok) {
-        logger.info("SMTP connection verified");
+      const emailVerification = await verifyEmailConnection();
+      if (emailVerification.ok) {
+        logger.info("Email provider connection verified", {
+          provider: emailVerification.provider
+        });
       } else {
-        logger.error("SMTP verification failed", {
-          reason: smtpVerification.reason,
-          code: smtpVerification.code,
-          response: smtpVerification.response,
-          error: smtpVerification.message
+        logger.error("Email provider verification failed", {
+          provider: emailVerification.provider || emailStatus.provider,
+          reason: emailVerification.reason,
+          code: emailVerification.code,
+          response: emailVerification.response,
+          error: emailVerification.message
         });
       }
     }
